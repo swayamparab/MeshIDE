@@ -11,7 +11,16 @@ import {
     getGithubInstallationRepositories,
     getGithubUser,
     verifyGithubState,
+    getGithubRepositoryContents,
 } from "./github.service.js";
+
+import {
+    createGithubConnection,
+    deleteGithubConnection,
+    getGithubConnectionByProject,
+    getGithubCredentialsByProject,
+} from "./github.repository.js";
+
 import { getProjectById } from "../projects/project.service.js";
 
 const STATE_COOKIE =
@@ -253,6 +262,99 @@ export async function githubCallbackController(
                 ),
             );
 
+        const availableRepositories =
+            installationsWithRepositories.flatMap(
+                (installation) =>
+                    installation.repositories.map(
+                        (repository) => ({
+                            installationId:
+                                installation.id,
+                            ...repository,
+                        }),
+                    ),
+            );
+
+        if (
+            availableRepositories.length === 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "No GitHub repositories are accessible to this installation.",
+            });
+        }
+
+        if (
+            availableRepositories.length > 1
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Multiple GitHub repositories are accessible. Repository selection is required.",
+                repositories:
+                    availableRepositories,
+            });
+        }
+
+        const repository =
+            availableRepositories[0];
+
+        if (!repository) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "No GitHub repository was selected.",
+            });
+        }
+
+        /*
+         * Persist the verified GitHub repository
+         * connection for this MeshIDE project.
+         *
+         * OAuth tokens are stored.
+         * Credential encryption added.
+         */
+        const accessTokenExpiresAt =
+            token.expires_in
+                ? new Date(
+                    Date.now() +
+                    token.expires_in * 1000,
+                )
+                : undefined;
+
+        const refreshTokenExpiresAt =
+            token.refresh_token_expires_in
+                ? new Date(
+                    Date.now() +
+                    token.refresh_token_expires_in *
+                    1000,
+                )
+                : undefined;
+
+        const connection =
+            await createGithubConnection({
+                projectId:
+                    statePayload.projectId,
+                githubUserId:
+                    githubUser.id,
+                githubUsername:
+                    githubUser.login,
+                installationId:
+                    repository.installationId,
+                repositoryOwner:
+                    repository.owner,
+                repositoryName:
+                    repository.name,
+                repositoryUrl:
+                    repository.url,
+                accessToken:
+                    token.access_token!,
+                refreshToken:
+                    token.refresh_token,
+                accessTokenExpiresAt,
+                refreshTokenExpiresAt,
+            });
+
         res.clearCookie(
             STATE_COOKIE,
             {
@@ -269,7 +371,8 @@ export async function githubCallbackController(
         return res.json({
             success: true,
             message:
-                "GitHub authorization successful.",
+                "GitHub repository connected.",
+            connection,
             githubUser: {
                 id: githubUser.id,
                 login: githubUser.login,
@@ -297,6 +400,239 @@ export async function githubCallbackController(
                 error instanceof Error
                     ? error.message
                     : "GitHub authorization failed.",
+        });
+    }
+}
+
+export async function getGithubConnectionController(
+    req: Request,
+    res: Response,
+) {
+    const userId = req.userId;
+
+    const projectId =
+        typeof req.query.projectId === "string"
+            ? req.query.projectId
+            : null;
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: "Unauthorized.",
+        });
+    }
+
+    if (!projectId) {
+        return res.status(400).json({
+            success: false,
+            message: "projectId is required.",
+        });
+    }
+
+    try {
+        const project = await getProjectById(
+            projectId,
+            userId,
+        );
+
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found.",
+            });
+        }
+
+        const connection =
+            await getGithubConnectionByProject(
+                projectId,
+            );
+
+        return res.json({
+            success: true,
+            connection: connection ?? null,
+        });
+    } catch (error) {
+        console.error(
+            "Failed to get GitHub connection:",
+            error,
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Failed to get GitHub connection.",
+        });
+    }
+}
+
+export async function disconnectGithubController(
+    req: Request,
+    res: Response,
+) {
+    const userId = req.userId;
+
+    const projectId =
+        typeof req.query.projectId === "string"
+            ? req.query.projectId
+            : null;
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: "Unauthorized.",
+        });
+    }
+
+    if (!projectId) {
+        return res.status(400).json({
+            success: false,
+            message: "projectId is required.",
+        });
+    }
+
+    try {
+        const project = await getProjectById(
+            projectId,
+            userId,
+        );
+
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found.",
+            });
+        }
+
+        const deleted =
+            await deleteGithubConnection(
+                projectId,
+            );
+
+        if (!deleted) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "GitHub connection not found.",
+            });
+        }
+
+        return res.json({
+            success: true,
+            message:
+                "GitHub repository disconnected.",
+        });
+    } catch (error) {
+        console.error(
+            "Failed to disconnect GitHub:",
+            error,
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Failed to disconnect GitHub.",
+        });
+    }
+}
+
+export async function getGithubRepositoryContentsController(
+    req: Request,
+    res: Response,
+) {
+    const userId = req.userId;
+
+    const projectId =
+        typeof req.query.projectId === "string"
+            ? req.query.projectId
+            : null;
+
+    const path =
+        typeof req.query.path === "string"
+            ? req.query.path
+            : "";
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: "Unauthorized.",
+        });
+    }
+
+    if (!projectId) {
+        return res.status(400).json({
+            success: false,
+            message: "projectId is required.",
+        });
+    }
+
+    try {
+        const project = await getProjectById(
+            projectId,
+            userId,
+        );
+
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found.",
+            });
+        }
+
+        const connection =
+            await getGithubConnectionByProject(
+                projectId,
+            );
+
+        if (!connection) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "GitHub repository is not connected.",
+            });
+        }
+
+        const credentials =
+            await getGithubCredentialsByProject(
+                projectId,
+            );
+
+        if (!credentials) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "GitHub credentials are not available.",
+            });
+        }
+
+        const contents =
+            await getGithubRepositoryContents(
+                credentials.accessToken,
+                connection.repositoryOwner,
+                connection.repositoryName,
+                path,
+            );
+
+        return res.json({
+            success: true,
+            repository: {
+                owner:
+                    connection.repositoryOwner,
+                name:
+                    connection.repositoryName,
+            },
+            path,
+            contents,
+        });
+    } catch (error) {
+        console.error(
+            "Failed to read GitHub repository contents:",
+            error,
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Failed to read GitHub repository.",
         });
     }
 }

@@ -40,8 +40,8 @@ interface GithubInstallation {
         type: "User" | "Organization";
     };
     repository_selection:
-    | "all"
-    | "selected";
+        | "all"
+        | "selected";
 }
 
 interface GithubInstallationsResponse {
@@ -64,6 +64,18 @@ interface GithubRepository {
 interface GithubInstallationRepositoriesResponse {
     total_count: number;
     repositories: GithubRepository[];
+}
+
+interface GithubContentItem {
+    name: string;
+    path: string;
+    sha: string;
+    size?: number;
+    url: string;
+    html_url: string;
+    git_url: string;
+    download_url: string | null;
+    type: "file" | "dir";
 }
 
 function getRequiredEnv(
@@ -207,8 +219,8 @@ export async function exchangeGithubCode(
     ) {
         throw new Error(
             data.error_description ??
-            data.error ??
-            "Failed to exchange GitHub authorization code.",
+                data.error ??
+                "Failed to exchange GitHub authorization code.",
         );
     }
 
@@ -242,7 +254,7 @@ async function githubRequest<T>(
     if (!response.ok) {
         throw new Error(
             data.message ??
-            `GitHub API request failed with status ${response.status}.`,
+                `GitHub API request failed with status ${response.status}.`,
         );
     }
 
@@ -274,5 +286,30 @@ export function getGithubInstallationRepositories(
     return githubRequest<GithubInstallationRepositoriesResponse>(
         accessToken,
         `/user/installations/${installationId}/repositories`,
+    );
+}
+
+export function getGithubRepositoryContents(
+    accessToken: string,
+    owner: string,
+    repository: string,
+    path = "",
+) {
+    const encodedPath = path
+        .split("/")
+        .filter(Boolean)
+        .map(encodeURIComponent)
+        .join("/");
+
+    const endpoint =
+        `/repos/${encodeURIComponent(owner)}` +
+        `/${encodeURIComponent(repository)}` +
+        `/contents/${encodedPath}`;
+
+    return githubRequest<
+        GithubContentItem | GithubContentItem[]
+    >(
+        accessToken,
+        endpoint,
     );
 }
