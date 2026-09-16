@@ -35,6 +35,8 @@ import Terminal from "@/components/terminal/Terminal";
 
 import ReactPreview, { type ReactPreviewHandle } from "@/components/preview/ReactPreview";
 import { getProjectFilePath } from "@/lib/webcontainer/webcontainer-files";
+import GitHubPanel from "./GithubPanel";
+import GithubRepositoryBrowser from "./GithubRepositoryBrowser";
 
 interface WorkspaceProps {
     projectId: string;
@@ -1422,7 +1424,7 @@ export default function Workspace({
             {/* Workspace */}
             <div className="flex min-h-0 flex-1">
                 {/* Explorer */}
-                <aside className="w-60 shrink-0 border-r border-zinc-800 bg-zinc-950">
+                <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
                     <div className="flex h-10 items-center justify-between border-b border-zinc-800 px-3">
                         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                             Explorer
@@ -1465,48 +1467,29 @@ export default function Workspace({
                         </div>
                     </div>
 
-                    <FileTree
-                        files={files}
-                        filesByParent={
-                            filesByParent
-                        }
-                        expandedFolders={
-                            expandedFolders
-                        }
-                        selectedFileId={
-                            activeFileId
-                        }
-                        selectedFolderId={
-                            selectedFolderId
-                        }
-                        isLoading={
-                            filesQuery.isLoading
-                        }
-                        isError={
-                            filesQuery.isError
-                        }
-                        onToggleFolder={
-                            toggleFolder
-                        }
-                        onSelectFile={
-                            handleSelectFile
-                        }
-                        onSelectFolder={
-                            handleSelectFolder
-                        }
-                        onClearSelection={
-                            clearExplorerSelection
-                        }
-                        onContextMenu={
-                            handleContextMenu
-                        }
-                        onRootContextMenu={
-                            handleRootContextMenu
-                        }
-                        onMoveFile={
-                            handleMoveFile
-                        }
-                    />
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                        <FileTree
+                            files={files}
+                            filesByParent={filesByParent}
+                            expandedFolders={expandedFolders}
+                            selectedFileId={activeFileId}
+                            selectedFolderId={selectedFolderId}
+                            isLoading={filesQuery.isLoading}
+                            isError={filesQuery.isError}
+                            onToggleFolder={toggleFolder}
+                            onSelectFile={handleSelectFile}
+                            onSelectFolder={handleSelectFolder}
+                            onClearSelection={clearExplorerSelection}
+                            onContextMenu={handleContextMenu}
+                            onRootContextMenu={handleRootContextMenu}
+                            onMoveFile={handleMoveFile}
+                        />
+                    </div>
+
+                    {/* GitHub Repository */}
+                    <div className="max-h-80 shrink-0 overflow-y-auto border-t border-zinc-800">
+                        <GithubRepositoryBrowser projectId={projectId} />
+                    </div>
                 </aside>
 
                 {/* Main Editor Area */}
@@ -1757,6 +1740,7 @@ export default function Workspace({
                 </section>
 
                 {/* Right Panel */}
+                <GitHubPanel projectId={projectId} />
                 {previewOpen && (
                     <aside className="hidden w-[45%] min-w-[420px] shrink-0 border-l border-zinc-800 bg-zinc-950 lg:flex">
                         <ReactPreview
