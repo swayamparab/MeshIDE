@@ -75,9 +75,7 @@ export async function connectGithubController(
             nonce,
             {
                 httpOnly: true,
-                secure:
-                    process.env.NODE_ENV ===
-                    "production",
+                secure: true,
                 sameSite: "none",
                 maxAge:
                     10 * 60 * 1000,
@@ -359,10 +357,7 @@ export async function githubCallbackController(
             STATE_COOKIE,
             {
                 httpOnly: true,
-                secure:
-                    process.env
-                        .NODE_ENV ===
-                    "production",
+                secure: true,
                 sameSite: "none",
                 path: "/",
             },
