@@ -20,10 +20,9 @@ export function useGithubConnection(projectId: string) {
 
 export function useGithubConnect() {
     return useMutation({
-        mutationFn: (projectId: string) =>
-            getGithubConnectUrl(projectId),
-        onSuccess: (url) => {
-            window.location.href = url;
+        mutationFn: async (projectId: string) => {
+            window.location.href =
+                `${process.env.NEXT_PUBLIC_API_URL}/api/github/connect?projectId=${encodeURIComponent(projectId)}`;
         },
     });
 }

@@ -83,13 +83,8 @@ export async function connectGithubController(
             },
         );
 
-        return res.json({
-            success: true,
-            authorizationUrl:
-                getGithubInstallUrl(
-                    state,
-                ),
-        });
+        return res.redirect(getGithubInstallUrl(state));
+        
     } catch (error) {
         console.error(
             "Failed to create GitHub authorization URL:",
