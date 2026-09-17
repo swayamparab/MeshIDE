@@ -15,7 +15,7 @@ export interface GithubConnection {
 
 interface GithubConnectResponse {
     success: boolean;
-    url: string;
+    authorizationUrl: string;
 }
 
 interface GithubConnectionResponse {
@@ -38,7 +38,7 @@ export async function getGithubConnectUrl(
             }
         );
 
-    return response.data.url;
+    return response.data.authorizationUrl;
 }
 
 export async function getGithubConnection(
