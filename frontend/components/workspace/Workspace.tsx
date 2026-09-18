@@ -1487,9 +1487,9 @@ export default function Workspace({
                     </div>
 
                     {/* GitHub Repository */}
-                    <div className="max-h-80 shrink-0 overflow-y-auto border-t border-zinc-800">
+                    {/* <div className="max-h-80 shrink-0 overflow-y-auto border-t border-zinc-800">
                         <GithubRepositoryBrowser projectId={projectId} />
-                    </div>
+                    </div> */}
                 </aside>
 
                 {/* Main Editor Area */}
@@ -1654,9 +1654,8 @@ export default function Workspace({
 
                         {activeOpenFile && (
                             <CodeEditor
-                                value={
-                                    activeOpenFile.content
-                                }
+                                path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
+                                value={activeOpenFile.content}
                                 language={getLanguageFromFileName(
                                     activeOpenFile.name,
                                 )}
@@ -1740,7 +1739,7 @@ export default function Workspace({
                 </section>
 
                 {/* Right Panel */}
-                <GitHubPanel projectId={projectId} />
+                {/* <GitHubPanel projectId={projectId} /> */}
                 {previewOpen && (
                     <aside className="hidden w-[45%] min-w-[420px] shrink-0 border-l border-zinc-800 bg-zinc-950 lg:flex">
                         <ReactPreview
