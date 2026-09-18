@@ -1,12 +1,15 @@
 import {
     and,
     eq,
+    exists,
     isNull,
-    ne
+    ne,
+    or
 } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import {
+    projectCollaborators,
     projectFiles,
     projects,
 } from "../../db/schema/index.js";
@@ -24,7 +27,7 @@ interface UpdateFileInput {
     parentId?: string | null | undefined;
 }
 
-async function verifyProjectOwnership(
+async function verifyProjectAccess(
     projectId: string,
     userId: string,
 ) {
@@ -36,7 +39,26 @@ async function verifyProjectOwnership(
         .where(
             and(
                 eq(projects.id, projectId),
-                eq(projects.ownerId, userId),
+                or(
+                    eq(projects.ownerId, userId),
+                    exists(
+                        db
+                            .select()
+                            .from(projectCollaborators)
+                            .where(
+                                and(
+                                    eq(
+                                        projectCollaborators.projectId,
+                                        projects.id,
+                                    ),
+                                    eq(
+                                        projectCollaborators.userId,
+                                        userId,
+                                    ),
+                                ),
+                            ),
+                    ),
+                ),
             ),
         )
         .limit(1);
@@ -206,7 +228,7 @@ export async function createFile(
     input: CreateFileInput,
 ) {
     const project =
-        await verifyProjectOwnership(
+        await verifyProjectAccess(
             projectId,
             userId,
         );
@@ -317,7 +339,7 @@ export async function getProjectFiles(
     userId: string,
 ) {
     const project =
-        await verifyProjectOwnership(
+        await verifyProjectAccess(
             projectId,
             userId,
         );
@@ -361,7 +383,7 @@ export async function getFile(
     fileId: string,
 ) {
     const project =
-        await verifyProjectOwnership(
+        await verifyProjectAccess(
             projectId,
             userId,
         );
@@ -416,7 +438,7 @@ export async function updateFile(
     input: UpdateFileInput,
 ) {
     const project =
-        await verifyProjectOwnership(
+        await verifyProjectAccess(
             projectId,
             userId,
         );
@@ -650,7 +672,7 @@ export async function deleteFile(
     fileId: string,
 ) {
     const project =
-        await verifyProjectOwnership(
+        await verifyProjectAccess(
             projectId,
             userId,
         );

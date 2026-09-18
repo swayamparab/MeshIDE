@@ -24,9 +24,7 @@ import type { ProjectFile } from "@/services/file";
 
 import CodeEditor from "@/components/editor/CodeEditor";
 
-import {
-    getLanguageFromFileName,
-} from "@/lib/editor/language";
+import { getLanguageFromFileName } from "@/lib/editor/language";
 
 import FileTree from "./FileTree";
 import CreateItemDialog from "./CreateItemDialog";
@@ -35,8 +33,9 @@ import Terminal from "@/components/terminal/Terminal";
 
 import ReactPreview, { type ReactPreviewHandle } from "@/components/preview/ReactPreview";
 import { getProjectFilePath } from "@/lib/webcontainer/webcontainer-files";
-import GitHubPanel from "./GithubPanel";
-import GithubRepositoryBrowser from "./GithubRepositoryBrowser";
+// import GitHubPanel from "./GithubPanel";
+// import GithubRepositoryBrowser from "./GithubRepositoryBrowser";\
+import AddCollaboratorsDialog from "./AddCollaboratorsDialog";
 
 interface WorkspaceProps {
     projectId: string;
@@ -1403,21 +1402,23 @@ export default function Workspace({
                         Project
                     </span>
 
-                    <span className="mx-2 text-zinc-700">
-                        /
-                    </span>
+                    <span className="mx-2 text-zinc-700">/</span>
 
                     <span className="truncate text-sm font-medium text-zinc-200">
                         {projectId}
                     </span>
                 </div>
 
-                <div className="flex items-center gap-2 px-4">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <div className="flex items-center gap-3 px-4">
+                    <AddCollaboratorsDialog projectId={projectId} />
 
-                    <span className="text-xs text-zinc-500">
-                        Connected
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+
+                        <span className="text-xs text-zinc-500">
+                            Connected
+                        </span>
+                    </div>
                 </div>
             </header>
 

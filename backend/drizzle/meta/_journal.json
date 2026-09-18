@@ -29,6 +29,13 @@
       "when": 1789467363927,
       "tag": "0003_dusty_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789737945386,
+      "tag": "0004_closed_namora",
+      "breakpoints": true
     }
   ]
 }

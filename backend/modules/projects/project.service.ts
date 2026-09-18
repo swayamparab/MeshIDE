@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { projects } from "../../db/schema/projects.js";
+import { projectCollaborators } from "../../db/schema/project-collaborators.js";
 
 interface CreateProjectInput {
     name: string;
@@ -36,19 +37,41 @@ export async function getUserProjects(userId: string) {
     return db
         .select({
             id: projects.id,
+            ownerId: projects.ownerId,
             name: projects.name,
             description: projects.description,
             createdAt: projects.createdAt,
             updatedAt: projects.updatedAt,
         })
         .from(projects)
-        .where(eq(projects.ownerId, userId));
+        .where(
+            or(
+                eq(projects.ownerId, userId),
+                exists(
+                    db
+                        .select()
+                        .from(projectCollaborators)
+                        .where(
+                            and(
+                                eq(
+                                    projectCollaborators.projectId,
+                                    projects.id,
+                                ),
+                                eq(
+                                    projectCollaborators.userId,
+                                    userId,
+                                ),
+                            ),
+                        ),
+                ),
+            ),
+        );
 }
 
 export async function getProjectById(
     projectId: string,
-    userId: string) {
-
+    userId: string,
+) {
     const [project] = await db
         .select({
             id: projects.id,
@@ -62,10 +85,29 @@ export async function getProjectById(
         .where(
             and(
                 eq(projects.id, projectId),
-                eq(projects.ownerId, userId)
-            )
+                or(
+                    eq(projects.ownerId, userId),
+                    exists(
+                        db
+                            .select()
+                            .from(projectCollaborators)
+                            .where(
+                                and(
+                                    eq(
+                                        projectCollaborators.projectId,
+                                        projects.id,
+                                    ),
+                                    eq(
+                                        projectCollaborators.userId,
+                                        userId,
+                                    ),
+                                ),
+                            ),
+                    ),
+                ),
+            ),
         )
-        .limit(1)
+        .limit(1);
 
     return project;
 }
