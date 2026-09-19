@@ -13,6 +13,7 @@ import {
     projectFiles,
     projects,
 } from "../../db/schema/index.js";
+import { emitFileCreated, emitFileDeleted, emitFileUpdated } from "../../socket/collaboration.events.js";
 
 interface CreateFileInput {
     name: string;
@@ -312,6 +313,8 @@ export async function createFile(
                 "FILE_CREATION_FAILED",
             );
         }
+
+        emitFileCreated(projectId, file);
 
         return file;
     } catch (error) {
@@ -645,6 +648,8 @@ export async function updateFile(
             );
         }
 
+        emitFileUpdated(projectId, updateFile);
+
         return updatedFile;
     } catch (error) {
         /*
@@ -768,6 +773,8 @@ export async function deleteFile(
     await deleteRecursive(
         fileId,
     );
+
+    emitFileDeleted(projectId, fileId);
 
     return file;
 }

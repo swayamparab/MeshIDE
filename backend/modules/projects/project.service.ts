@@ -8,6 +8,43 @@ interface CreateProjectInput {
     description?: string | undefined;
 }
 
+export async function userHasProjectAccess(
+    projectId: string,
+    userId: string,
+) {
+    const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(
+            and(
+                eq(projects.id, projectId),
+                or(
+                    eq(projects.ownerId, userId),
+                    exists(
+                        db
+                            .select()
+                            .from(projectCollaborators)
+                            .where(
+                                and(
+                                    eq(
+                                        projectCollaborators.projectId,
+                                        projects.id,
+                                    ),
+                                    eq(
+                                        projectCollaborators.userId,
+                                        userId,
+                                    ),
+                                ),
+                            ),
+                    ),
+                ),
+            ),
+        )
+        .limit(1);
+
+    return Boolean(project);
+}
+
 export async function createProject(userId: string, input: CreateProjectInput) {
 
     const [project] = await db

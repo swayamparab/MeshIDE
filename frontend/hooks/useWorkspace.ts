@@ -23,6 +23,7 @@ import type { ProjectFile } from "@/services/file";
 import type { ReactPreviewHandle } from "@/components/preview/ReactPreview";
 import { getProjectFilePath } from "@/lib/webcontainer/webcontainer-files";
 import { socket } from "@/lib/socket";
+import { useFileEvents } from "./events/useFileEvents";
 
 export interface OpenFile {
     id: string;
@@ -111,6 +112,8 @@ export function useWorkspace(projectId: string) {
     >({});
 
     const filesQuery = useProjectFiles(projectId);
+
+    useFileEvents(projectId);
 
     const selectedFileQuery =
         useFile(
@@ -375,6 +378,12 @@ export function useWorkspace(projectId: string) {
             socket.emit("project:join", projectId);
         };
 
+        const handleJoinError = (data: { message: string }) => {
+            window.alert(data.message);
+        };
+
+        socket.on("project:join:error", handleJoinError);
+
         if (socket.connected) {
             joinProject();
         } else {
@@ -383,6 +392,7 @@ export function useWorkspace(projectId: string) {
 
         return () => {
             socket.off("connect", joinProject);
+            socket.off("project:join:error", handleJoinError);
 
             if (socket.connected) {
                 socket.emit("project:leave", projectId);

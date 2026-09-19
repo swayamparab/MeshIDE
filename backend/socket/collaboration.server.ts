@@ -1,5 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
+import { verifyAccessToken } from "../lib/auth/jwt.js";
+import { userHasProjectAccess } from "../modules/projects/project.service.js";
 
 let io: Server;
 
@@ -13,6 +15,33 @@ export function setupCollaborationSocket(
         },
     });
 
+    io.use((socket, next) => {
+        const token = socket.handshake.headers.cookie
+            ?.split("; ")
+            .find((cookie) =>
+                cookie.startsWith("mesh_access_token="),
+            )
+            ?.split("=")[1];
+
+        if (!token) {
+            return next(
+                new Error("Authentication required"),
+            );
+        }
+
+        try {
+            const { userId } = verifyAccessToken(token);
+
+            socket.data.userId = userId;
+
+            next();
+        } catch {
+            next(
+                new Error("Invalid or expired token"),
+            );
+        }
+    });
+
     io.on("connection", (socket) => {
         console.log(
             `Collaboration socket connected: ${socket.id}`,
@@ -20,14 +49,40 @@ export function setupCollaborationSocket(
 
         socket.on(
             "project:join",
-            (projectId: string) => {
+            async (projectId: string) => {
                 if (!projectId) return;
 
-                socket.join(`project:${projectId}`);
+                try {
+                    const userId = socket.data.userId as string;
 
-                console.log(
-                    `Socket ${socket.id} joined project:${projectId}`,
-                );
+                    const hasAccess = await userHasProjectAccess(
+                        projectId,
+                        userId,
+                    );
+
+                    if (!hasAccess) {
+                        socket.emit("project:join:error", {
+                            message: "You do not have access to this project.",
+                        });
+
+                        return;
+                    }
+
+                    await socket.join(`project:${projectId}`);
+
+                    console.log(
+                        `Socket ${socket.id} joined project:${projectId}`,
+                    );
+                } catch (error) {
+                    console.error(
+                        "Project room join failed:",
+                        error,
+                    );
+
+                    socket.emit("project:join:error", {
+                        message: "Unable to join project.",
+                    });
+                }
             },
         );
 
