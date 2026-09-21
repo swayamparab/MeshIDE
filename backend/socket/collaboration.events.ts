@@ -35,3 +35,19 @@ export function emitFileDeleted(
             fileId,
         });
 }
+
+export function emitFileContentUpdated(
+    projectId: string,
+    fileId: string,
+    content: string,
+    userId: string,
+) {
+    getIO()
+        .to(`project:${projectId}`)
+        .emit("file:content-updated", {
+            projectId,
+            fileId,
+            content,
+            userId,
+        });
+}

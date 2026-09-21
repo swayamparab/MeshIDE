@@ -115,6 +115,42 @@ export function useWorkspace(projectId: string) {
 
     useFileEvents(projectId);
 
+    useEffect(() => {
+        const handleContentUpdate = (data: {
+            projectId: string;
+            fileId: string;
+            content: string;
+            userId: string;
+        }) => {
+            if (data.projectId !== projectId) return;
+
+            setOpenFiles((current) =>
+                current.map((file) => {
+                    if (file.id !== data.fileId) {
+                        return file;
+                    }
+
+                    // Do not overwrite local unsaved changes.
+                    if (file.content !== file.savedContent) {
+                        return file;
+                    }
+
+                    return {
+                        ...file,
+                        content: data.content,
+                        savedContent: data.content,
+                    };
+                }),
+            );
+        };
+
+        socket.on("file:content-updated", handleContentUpdate);
+
+        return () => {
+            socket.off("file:content-updated", handleContentUpdate);
+        };
+    }, [projectId]);
+
     const selectedFileQuery =
         useFile(
             projectId,

@@ -13,7 +13,7 @@ import {
     projectFiles,
     projects,
 } from "../../db/schema/index.js";
-import { emitFileCreated, emitFileDeleted, emitFileUpdated } from "../../socket/collaboration.events.js";
+import { emitFileCreated, emitFileDeleted, emitFileUpdated, emitFileContentUpdated } from "../../socket/collaboration.events.js";
 
 interface CreateFileInput {
     name: string;
@@ -648,7 +648,19 @@ export async function updateFile(
             );
         }
 
-        emitFileUpdated(projectId, updateFile);
+        emitFileUpdated(projectId, updatedFile);
+
+        if (
+            existingFile.type === "file" &&
+            input.content !== undefined
+        ) {
+            emitFileContentUpdated(
+                projectId,
+                updatedFile.id,
+                input.content,
+                userId,
+            );
+        }
 
         return updatedFile;
     } catch (error) {
