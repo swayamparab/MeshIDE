@@ -11,6 +11,8 @@ import ReactPreview from "@/components/preview/ReactPreview";
 import AddCollaboratorsDialog from "./AddCollaboratorsDialog";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useSocket } from "@/providers/SocketProvider";
+import { useYjs } from "@/hooks/useYjs";
+import { useEffect } from "react";
 
 interface WorkspaceProps {
     projectId: string;
@@ -63,9 +65,57 @@ export default function Workspace({ projectId }: WorkspaceProps) {
         handleRootContextMenu,
         handleMoveFile,
         handleEditorChange,
+        handleSave
     } = useWorkspace(projectId);
 
     const { connected } = useSocket();
+
+    const {
+        text: yText,
+        insertTestText,
+    } = useYjs({
+        projectId,
+        fileId: activeFileId,
+    });
+
+    // ctrl+s save effect
+    useEffect(() => {
+        function handleKeyDown(
+            event: KeyboardEvent,
+        ) {
+            if (
+                (event.ctrlKey ||
+                    event.metaKey) &&
+                event.key.toLowerCase() ===
+                "s"
+            ) {
+                event.preventDefault();
+
+                if (!yText) {
+                    return;
+                }
+
+                handleSave(
+                    yText.toString(),
+                );
+            }
+        }
+
+        window.addEventListener(
+            "keydown",
+            handleKeyDown,
+        );
+
+        return () => {
+            window.removeEventListener(
+                "keydown",
+                handleKeyDown,
+            );
+        };
+    }, [
+        yText,
+        handleSave,
+    ]);
 
     return (
         <main className="flex h-screen flex-col overflow-hidden bg-zinc-950 text-zinc-100">
@@ -92,14 +142,24 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                     </span>
                 </div>
 
+                <button
+                    type="button"
+                    onClick={() =>
+                        insertTestText(" TEST")
+                    }
+                    className="rounded bg-zinc-800 px-2 py-1 text-xs"
+                >
+                    Yjs Test
+                </button>
+
                 <div className="flex items-center gap-3 px-4">
                     <AddCollaboratorsDialog projectId={projectId} />
 
                     <div className="flex items-center gap-2">
                         <span
                             className={`h-2 w-2 rounded-full ${connected
-                                    ? "bg-emerald-500"
-                                    : "bg-red-500"
+                                ? "bg-emerald-500"
+                                : "bg-red-500"
                                 }`}
                         />
 
@@ -344,10 +404,10 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                         {activeOpenFile && (
                             <CodeEditor
                                 path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
-                                value={activeOpenFile.content}
                                 language={getLanguageFromFileName(
                                     activeOpenFile.name,
                                 )}
+                                yText={yText}
                                 onChange={handleEditorChange}
                             />
                         )}

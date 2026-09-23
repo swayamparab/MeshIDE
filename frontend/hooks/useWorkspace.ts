@@ -11,13 +11,13 @@ import {
     useCreateFile,
     useCreateFolder,
     useProjectFiles,
-} from "@/hooks/useProjectFiles";
+} from "@/hooks/project/useProjectFiles";
 
 import {
     useFile,
     useUpdateFile,
     useDeleteFile,
-} from "@/hooks/useFile";
+} from "@/hooks/file/useFile";
 
 import type { ProjectFile } from "@/services/file";
 import type { ReactPreviewHandle } from "@/components/preview/ReactPreview";
@@ -501,12 +501,20 @@ export function useWorkspace(projectId: string) {
         setContextMenu(null);
     }
 
-    function handleSave() {
+    function handleSave(content?: string) {
         if (
             !activeOpenFile ||
-            activeOpenFile.content ===
-            activeOpenFile.savedContent ||
             updateFileMutation.isPending
+        ) {
+            return;
+        }
+
+        const contentToSave =
+            content ?? activeOpenFile.content;
+
+        if (
+            contentToSave ===
+            activeOpenFile.savedContent
         ) {
             return;
         }
@@ -515,7 +523,7 @@ export function useWorkspace(projectId: string) {
             {
                 projectId,
                 fileId: activeOpenFile.id,
-                content: activeOpenFile.content,
+                content: contentToSave,
             },
             {
                 onSuccess: () => {
@@ -528,7 +536,7 @@ export function useWorkspace(projectId: string) {
                                         ? {
                                             ...file,
                                             savedContent:
-                                                file.content,
+                                                contentToSave,
                                         }
                                         : file,
                             ),
@@ -1409,42 +1417,6 @@ export function useWorkspace(projectId: string) {
             },
         );
     }
-
-    /*
-     * Ctrl+S / Cmd+S
-     */
-    useEffect(() => {
-        function handleKeyDown(
-            event: KeyboardEvent,
-        ) {
-            if (
-                (event.ctrlKey ||
-                    event.metaKey) &&
-                event.key.toLowerCase() ===
-                "s"
-            ) {
-                event.preventDefault();
-
-                handleSave();
-            }
-        }
-
-        window.addEventListener(
-            "keydown",
-            handleKeyDown,
-        );
-
-        return () => {
-            window.removeEventListener(
-                "keydown",
-                handleKeyDown,
-            );
-        };
-    }, [
-        activeFileId,
-        openFiles,
-        updateFileMutation.isPending,
-    ]);
 
     function handleEditorChange(value: string | undefined) {
         if (!activeOpenFile) return;

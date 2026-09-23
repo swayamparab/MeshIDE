@@ -12,7 +12,7 @@ import {
     useDeleteProject,
     useProjects,
     useUpdateProject,
-} from "@/hooks/useProjects";
+} from "@/hooks/project/useProjects";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { logout } from "@/services/auth";
 

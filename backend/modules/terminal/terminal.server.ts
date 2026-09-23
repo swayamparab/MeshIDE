@@ -264,8 +264,7 @@ export function setupTerminalWebSocket(
 
     const wss =
         new WebSocketServer({
-            server,
-            path: "/terminal",
+            noServer: true,
             maxPayload:
                 MAX_CODE_SIZE +
                 16 * 1024,
@@ -495,7 +494,7 @@ export function setupTerminalWebSocket(
 
                         return;
                     }
-                    
+
                     if (
                         isInputMessage(
                             parsed,

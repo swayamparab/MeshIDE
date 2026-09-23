@@ -43,9 +43,9 @@ export function setupCollaborationSocket(
     });
 
     io.on("connection", (socket) => {
-        console.log(
-            `Collaboration socket connected: ${socket.id}`,
-        );
+        // console.log(
+        //     `Collaboration socket connected: ${socket.id}`,
+        // );
 
         socket.on(
             "project:join",
@@ -70,9 +70,9 @@ export function setupCollaborationSocket(
 
                     await socket.join(`project:${projectId}`);
 
-                    console.log(
-                        `Socket ${socket.id} joined project:${projectId}`,
-                    );
+                    // console.log(
+                    //     `Socket ${socket.id} joined project:${projectId}`,
+                    // );
                 } catch (error) {
                     console.error(
                         "Project room join failed:",
@@ -93,16 +93,16 @@ export function setupCollaborationSocket(
 
                 socket.leave(`project:${projectId}`);
 
-                console.log(
-                    `Socket ${socket.id} left project:${projectId}`,
-                );
+                // console.log(
+                //     `Socket ${socket.id} left project:${projectId}`,
+                // );
             },
         );
 
         socket.on("disconnect", () => {
-            console.log(
-                `Collaboration socket disconnected: ${socket.id}`,
-            );
+            // console.log(
+            //     `Collaboration socket disconnected: ${socket.id}`,
+            // );
         });
     });
 

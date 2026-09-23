@@ -262,13 +262,13 @@ const ReactPreview = forwardRef<
                             return;
                         }
 
-                        console.log(
-                            "[MeshIDE] Server ready:",
-                            {
-                                port,
-                                url,
-                            },
-                        );
+                        // console.log(
+                        //     "[MeshIDE] Server ready:",
+                        //     {
+                        //         port,
+                        //         url,
+                        //     },
+                        // );
 
                         setPreviewUrl(url);
 
@@ -303,10 +303,10 @@ const ReactPreview = forwardRef<
                 devProcess.output.pipeTo(
                     new WritableStream({
                         write(data) {
-                            console.log(
-                                "[MeshIDE Project]",
-                                data,
-                            );
+                            // console.log(
+                            //     "[MeshIDE Project]",
+                            //     data,
+                            // );
                         },
                     }),
                 );
