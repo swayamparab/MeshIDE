@@ -4,7 +4,7 @@ import {
     useGithubConnect,
     useGithubConnection,
     useGithubDisconnect,
-} from "@/hooks/useGithub";
+} from "@/hooks/github/useGithub";
 
 interface GitHubPanelProps {
     projectId: string;

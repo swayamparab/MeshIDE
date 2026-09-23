@@ -10,7 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import { useGithubRepositoryContents } from "@/hooks/useGithubRepository";
+import { useGithubRepositoryContents } from "@/hooks/github/useGithubRepository";
 
 interface GithubRepositoryBrowserProps {
   projectId: string;
