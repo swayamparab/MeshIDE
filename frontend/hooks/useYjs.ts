@@ -11,6 +11,8 @@ import * as Y from "yjs";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import * as syncProtocol from "y-protocols/sync";
+import * as awarenessProtocol from "y-protocols/awareness";
+import { useCurrentUser } from "./useAuth";
 
 interface UseYjsOptions {
     projectId: string;
@@ -18,6 +20,7 @@ interface UseYjsOptions {
 }
 
 const MESSAGE_SYNC = 0;
+const MESSAGE_AWARENESS = 1;
 
 export function useYjs({
     projectId,
@@ -39,13 +42,36 @@ export function useYjs({
         [doc],
     );
 
-    const socketRef =
-        useRef<WebSocket | null>(null);
+    const awareness = useMemo(
+        () =>
+            new awarenessProtocol.Awareness(
+                doc,
+            ),
+        [doc],
+    );
+
+    const socketRef = useRef<WebSocket | null>(null);
+
+    const { data: user } = useCurrentUser();
 
     useEffect(() => {
         if (!projectId || !fileId) {
             return;
         }
+
+        if (!user) {
+            return;
+        }
+
+        awareness.setLocalStateField("user", {
+            id: user.user.id,
+            name: user.user.username,
+        });
+
+        console.log(
+            "Local awareness:",
+            awareness.getLocalState(),
+        );
 
         setSynced(false);
 
@@ -132,6 +158,71 @@ export function useYjs({
             );
         };
 
+        const sendAwarenessUpdate = (
+            update: Uint8Array,
+        ) => {
+            if (
+                socket.readyState !==
+                WebSocket.OPEN
+            ) {
+                return;
+            }
+
+            const encoder =
+                encoding.createEncoder();
+
+            encoding.writeVarUint(
+                encoder,
+                MESSAGE_AWARENESS,
+            );
+
+            encoding.writeVarUint8Array(
+                encoder,
+                update,
+            );
+
+            socket.send(
+                encoding.toUint8Array(
+                    encoder,
+                ),
+            );
+        };
+
+        const handleAwarenessUpdate = (
+            {
+                added,
+                updated,
+                removed,
+            }: {
+                added: number[];
+                updated: number[];
+                removed: number[];
+            },
+            origin: unknown,
+        ) => {
+            if (origin === socket) {
+                return;
+            }
+
+            const changedClients = [
+                ...added,
+                ...updated,
+                ...removed,
+            ];
+
+            if (changedClients.length === 0) {
+                return;
+            }
+
+            const update =
+                awarenessProtocol.encodeAwarenessUpdate(
+                    awareness,
+                    changedClients,
+                );
+
+            sendAwarenessUpdate(update);
+        };
+
         const handleLocalUpdate = (
             update: Uint8Array,
             origin: unknown,
@@ -153,6 +244,11 @@ export function useYjs({
             sendUpdate(update);
         };
 
+        awareness.on(
+            "update",
+            handleAwarenessUpdate,
+        );
+
         doc.on(
             "update",
             handleLocalUpdate,
@@ -173,7 +269,7 @@ export function useYjs({
         ) => {
             if (
                 !(event.data instanceof
-                ArrayBuffer)
+                    ArrayBuffer)
             ) {
                 return;
             }
@@ -193,6 +289,24 @@ export function useYjs({
                     decoding.readVarUint(
                         decoder,
                     );
+
+                if (
+                    messageType ===
+                    MESSAGE_AWARENESS
+                ) {
+                    const update =
+                        decoding.readVarUint8Array(
+                            decoder,
+                        );
+
+                    awarenessProtocol.applyAwarenessUpdate(
+                        awareness,
+                        update,
+                        socket,
+                    );
+
+                    return;
+                }
 
                 if (
                     messageType !==
@@ -238,7 +352,7 @@ export function useYjs({
                         encoder,
                     ) > 1 &&
                     socket.readyState ===
-                        WebSocket.OPEN
+                    WebSocket.OPEN
                 ) {
                     socket.send(
                         encoding.toUint8Array(
@@ -280,6 +394,17 @@ export function useYjs({
         };
 
         return () => {
+            awarenessProtocol.removeAwarenessStates(
+                awareness,
+                [awareness.clientID],
+                socket,
+            );
+
+            awareness.off(
+                "update",
+                handleAwarenessUpdate,
+            );
+
             doc.off(
                 "update",
                 handleLocalUpdate,
@@ -288,20 +413,25 @@ export function useYjs({
             socket.close();
 
             if (
-                socketRef.current ===
-                socket
+                socketRef.current === socket
             ) {
                 socketRef.current = null;
             }
 
+            awareness.destroy();
+            doc.destroy();
+
             setConnected(false);
             setSynced(false);
         };
+
     }, [
         projectId,
         fileId,
         doc,
-        text
+        text,
+        awareness,
+        user
     ]);
 
     const insertTestText = (
@@ -316,8 +446,8 @@ export function useYjs({
     return {
         doc,
         text,
-        socket:
-            socketRef.current,
+        awareness,
+        socket: socketRef.current,
         connected,
         synced,
         insertTestText,

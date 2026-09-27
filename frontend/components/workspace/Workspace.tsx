@@ -72,7 +72,9 @@ export default function Workspace({ projectId }: WorkspaceProps) {
 
     const {
         text: yText,
+        awareness,
         insertTestText,
+        synced,
     } = useYjs({
         projectId,
         fileId: activeFileId,
@@ -366,7 +368,7 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                     </div>
 
                     {/* Editor */}
-                    <div className="min-h-0 flex-1 overflow-auto bg-zinc-950">
+                    <div className="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
                         {!activeFileId && (
                             <div className="flex h-full items-center justify-center">
                                 <div className="text-center">
@@ -401,15 +403,18 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                                 </div>
                             )}
 
-                        {activeOpenFile && (
-                            <CodeEditor
-                                path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
-                                language={getLanguageFromFileName(
-                                    activeOpenFile.name,
-                                )}
-                                yText={yText}
-                                onChange={handleEditorChange}
-                            />
+                        {activeOpenFile && synced && (
+                            <div className="absolute inset-0">
+                                <CodeEditor
+                                    path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
+                                    language={getLanguageFromFileName(
+                                        activeOpenFile.name,
+                                    )}
+                                    yText={yText}
+                                    awareness={awareness}
+                                    onChange={handleEditorChange}
+                                />
+                            </div>
                         )}
                     </div>
 

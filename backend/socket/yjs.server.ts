@@ -12,12 +12,14 @@ import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 
 import * as syncProtocol from "y-protocols/sync";
+import * as awarenessProtocol from "y-protocols/awareness";
 
 import { verifyAccessToken } from "../lib/auth/jwt.js";
 import { getFile } from "../modules/files/file.service.js";
 
 interface YjsDocument {
     doc: Y.Doc;
+    awareness: awarenessProtocol.Awareness;
     clients: Set<WebSocket>;
 }
 
@@ -27,6 +29,7 @@ const documents = new Map<
 >();
 
 const MESSAGE_SYNC = 0;
+const MESSAGE_AWARENESS = 1;
 
 function getCookie(
     request: IncomingMessage,
@@ -161,8 +164,8 @@ export function setupYjsWebSocket(
              */
             const pendingMessages:
                 | Array<
-                      Buffer | ArrayBuffer | Buffer[]
-                  >
+                    Buffer | ArrayBuffer | Buffer[]
+                >
                 = [];
 
             /*
@@ -183,9 +186,51 @@ export function setupYjsWebSocket(
                         return;
                     }
 
-                    await handleSyncMessage(
-                        rawMessage,
-                    );
+                    try {
+                        const data =
+                            rawMessage instanceof Buffer
+                                ? new Uint8Array(
+                                    rawMessage,
+                                )
+                                : new Uint8Array(
+                                    rawMessage as ArrayBuffer,
+                                );
+
+                        const decoder =
+                            decoding.createDecoder(
+                                data,
+                            );
+
+                        const messageType =
+                            decoding.readVarUint(
+                                decoder,
+                            );
+
+                        if (
+                            messageType ===
+                            MESSAGE_SYNC
+                        ) {
+                            await handleSyncMessage(
+                                rawMessage,
+                            );
+
+                            return;
+                        }
+
+                        if (
+                            messageType ===
+                            MESSAGE_AWARENESS
+                        ) {
+                            handleAwarenessMessage(
+                                rawMessage,
+                            );
+                        }
+                    } catch (error) {
+                        console.error(
+                            "Yjs message handling error:",
+                            error,
+                        );
+                    }
                 },
             );
 
@@ -202,13 +247,13 @@ export function setupYjsWebSocket(
                 try {
                     const data =
                         rawMessage instanceof
-                        Buffer
+                            Buffer
                             ? new Uint8Array(
-                                  rawMessage,
-                              )
+                                rawMessage,
+                            )
                             : new Uint8Array(
-                                  rawMessage as ArrayBuffer,
-                              );
+                                rawMessage as ArrayBuffer,
+                            );
 
                     const decoder =
                         decoding.createDecoder(
@@ -264,7 +309,7 @@ export function setupYjsWebSocket(
                             encoder,
                         ) > 1 &&
                         socket.readyState ===
-                            WebSocket.OPEN
+                        WebSocket.OPEN
                     ) {
                         socket.send(
                             encoding.toUint8Array(
@@ -278,6 +323,143 @@ export function setupYjsWebSocket(
                         error,
                     );
                 }
+            }
+
+            function handleAwarenessMessage(
+                rawMessage:
+                    | Buffer
+                    | ArrayBuffer
+                    | Buffer[],
+            ) {
+                if (!yjsDocument) {
+                    return;
+                }
+
+                try {
+                    const data =
+                        rawMessage instanceof Buffer
+                            ? new Uint8Array(rawMessage)
+                            : new Uint8Array(
+                                rawMessage as ArrayBuffer,
+                            );
+
+                    const decoder =
+                        decoding.createDecoder(data);
+
+                    const messageType =
+                        decoding.readVarUint(decoder);
+
+                    if (
+                        messageType !==
+                        MESSAGE_AWARENESS
+                    ) {
+                        return;
+                    }
+
+                    const update =
+                        decoding.readVarUint8Array(
+                            decoder,
+                        );
+
+                    awarenessProtocol.applyAwarenessUpdate(
+                        yjsDocument.awareness,
+                        update,
+                        socket,
+                    );
+                } catch (error) {
+                    console.error(
+                        "Yjs awareness error:",
+                        error,
+                    );
+                }
+            }
+
+            function broadcastAwarenessUpdate(
+                update: Uint8Array,
+                origin: WebSocket,
+            ) {
+                if (!yjsDocument) {
+                    return;
+                }
+
+                const encoder =
+                    encoding.createEncoder();
+
+                encoding.writeVarUint(
+                    encoder,
+                    MESSAGE_AWARENESS,
+                );
+
+                encoding.writeVarUint8Array(
+                    encoder,
+                    update,
+                );
+
+                const message =
+                    encoding.toUint8Array(
+                        encoder,
+                    );
+
+                for (
+                    const client of
+                    yjsDocument.clients
+                ) {
+                    if (client === origin) {
+                        continue;
+                    }
+
+                    if (
+                        client.readyState !==
+                        WebSocket.OPEN
+                    ) {
+                        continue;
+                    }
+
+                    client.send(message);
+                }
+            }
+
+            function handleAwarenessUpdate(
+                {
+                    added,
+                    updated,
+                    removed,
+                }: {
+                    added: number[];
+                    updated: number[];
+                    removed: number[];
+                },
+                origin: unknown,
+            ) {
+                if (
+                    !yjsDocument ||
+                    !(origin instanceof WebSocket)
+                ) {
+                    return;
+                }
+
+                const changedClients = [
+                    ...added,
+                    ...updated,
+                    ...removed,
+                ];
+
+                if (
+                    changedClients.length === 0
+                ) {
+                    return;
+                }
+
+                const update =
+                    awarenessProtocol.encodeAwarenessUpdate(
+                        yjsDocument.awareness,
+                        changedClients,
+                    );
+
+                broadcastAwarenessUpdate(
+                    update,
+                    origin,
+                );
             }
 
             /*
@@ -340,13 +522,15 @@ export function setupYjsWebSocket(
                         );
 
                     if (!yjsDocument) {
-                        const doc =
-                            new Y.Doc();
+                        const doc = new Y.Doc();
 
-                        const text =
-                            doc.getText(
-                                "monaco",
-                            );
+                        const awareness = new awarenessProtocol.Awareness(
+                            doc,
+                        );
+
+                        const text = doc.getText(
+                            "monaco",
+                        );
 
                         /*
                          * Load PostgreSQL's saved
@@ -364,9 +548,15 @@ export function setupYjsWebSocket(
 
                         yjsDocument = {
                             doc,
+                            awareness,
                             clients:
                                 new Set(),
                         };
+
+                        yjsDocument.awareness.on(
+                            "update",
+                            handleAwarenessUpdate,
+                        );
 
                         documents.set(
                             documentKey,
@@ -433,6 +623,44 @@ export function setupYjsWebSocket(
                         socket,
                     );
 
+                    // Send the current awareness state
+                    // to the newly connected client.
+                    const awarenessStates =
+                        Array.from(
+                            yjsDocument.awareness.getStates().keys(),
+                        );
+
+                    if (
+                        awarenessStates.length > 0 &&
+                        socket.readyState ===
+                        WebSocket.OPEN
+                    ) {
+                        const update =
+                            awarenessProtocol.encodeAwarenessUpdate(
+                                yjsDocument.awareness,
+                                awarenessStates,
+                            );
+
+                        const encoder =
+                            encoding.createEncoder();
+
+                        encoding.writeVarUint(
+                            encoder,
+                            MESSAGE_AWARENESS,
+                        );
+
+                        encoding.writeVarUint8Array(
+                            encoder,
+                            update,
+                        );
+
+                        socket.send(
+                            encoding.toUint8Array(
+                                encoder,
+                            ),
+                        );
+                    }
+
                     initialized = true;
 
                     // console.log(
@@ -452,13 +680,28 @@ export function setupYjsWebSocket(
                      * Process every message that arrived
                      * while getFile() was running.
                      */
-                    for (
-                        const message of
-                        pendingMessages
-                    ) {
-                        await handleSyncMessage(
-                            message,
-                        );
+                    for (const message of pendingMessages) {
+                        const data =
+                            message instanceof Buffer
+                                ? new Uint8Array(message)
+                                : new Uint8Array(
+                                    message as ArrayBuffer,
+                                );
+
+                        const decoder =
+                            decoding.createDecoder(data);
+
+                        const messageType =
+                            decoding.readVarUint(decoder);
+
+                        if (messageType === MESSAGE_SYNC) {
+                            await handleSyncMessage(message);
+                            continue;
+                        }
+
+                        if (messageType === MESSAGE_AWARENESS) {
+                            handleAwarenessMessage(message);
+                        }
                     }
 
                     pendingMessages.length = 0;
@@ -495,19 +738,16 @@ export function setupYjsWebSocket(
 
                     if (
                         yjsDocument &&
-                        yjsDocument.clients
-                            .size === 0
+                        yjsDocument.clients.size === 0
                     ) {
-                        yjsDocument.doc.destroy();
-
-                        documents.delete(
-                            documentKey,
+                        yjsDocument.awareness.off(
+                            "update",
+                            handleAwarenessUpdate,
                         );
 
-                        // console.log(
-                        //     "Yjs document destroyed:",
-                        //     documentKey,
-                        // );
+                        yjsDocument.doc.destroy();
+
+                        documents.delete(documentKey);
                     }
                 },
             );
