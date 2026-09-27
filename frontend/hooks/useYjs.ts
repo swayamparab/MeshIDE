@@ -100,6 +100,20 @@ export function useYjs({
 
         socketRef.current = socket;
 
+        // Handle user closing the browser tab or reloading the page
+        const handleBeforeUnload = () => {
+            awareness.setLocalState(null);
+            if (socket.readyState === WebSocket.OPEN) {
+                const update = awarenessProtocol.encodeAwarenessUpdate(
+                    awareness,
+                    [awareness.clientID]
+                );
+                sendAwarenessUpdate(update);
+            }
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+
         const sendSyncStep1 = () => {
             if (
                 socket.readyState !==
@@ -394,30 +408,30 @@ export function useYjs({
         };
 
         return () => {
-            awarenessProtocol.removeAwarenessStates(
-                awareness,
-                [awareness.clientID],
-                socket,
-            );
+            window.removeEventListener("beforeunload", handleBeforeUnload);
 
-            awareness.off(
-                "update",
-                handleAwarenessUpdate,
-            );
+            // 1. Clear local awareness state and flush removal to server
+            awareness.setLocalState(null);
+            if (socket.readyState === WebSocket.OPEN) {
+                const update = awarenessProtocol.encodeAwarenessUpdate(
+                    awareness,
+                    [awareness.clientID]
+                );
+                sendAwarenessUpdate(update);
+            }
 
-            doc.off(
-                "update",
-                handleLocalUpdate,
-            );
+            // 2. Detach listeners
+            awareness.off("update", handleAwarenessUpdate);
+            doc.off("update", handleLocalUpdate);
 
+            // 3. Close the socket connection
             socket.close();
 
-            if (
-                socketRef.current === socket
-            ) {
+            if (socketRef.current === socket) {
                 socketRef.current = null;
             }
 
+            // 4. Destroy awareness and doc instances
             awareness.destroy();
             doc.destroy();
 

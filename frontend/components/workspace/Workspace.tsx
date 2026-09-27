@@ -406,6 +406,7 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                         {activeOpenFile && synced && (
                             <div className="absolute inset-0">
                                 <CodeEditor
+                                    key={activeOpenFile.id}
                                     path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
                                     language={getLanguageFromFileName(
                                         activeOpenFile.name,

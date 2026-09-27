@@ -168,6 +168,8 @@ export function setupYjsWebSocket(
                 >
                 = [];
 
+            const awarenessClientIds = new Set<number>();
+
             /*
              * Register the message listener IMMEDIATELY.
              *
@@ -376,46 +378,26 @@ export function setupYjsWebSocket(
 
             function broadcastAwarenessUpdate(
                 update: Uint8Array,
-                origin: WebSocket,
+                origin: unknown,
             ) {
                 if (!yjsDocument) {
                     return;
                 }
 
-                const encoder =
-                    encoding.createEncoder();
+                const encoder = encoding.createEncoder();
+                encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
+                encoding.writeVarUint8Array(encoder, update);
+                const message = encoding.toUint8Array(encoder);
 
-                encoding.writeVarUint(
-                    encoder,
-                    MESSAGE_AWARENESS,
-                );
-
-                encoding.writeVarUint8Array(
-                    encoder,
-                    update,
-                );
-
-                const message =
-                    encoding.toUint8Array(
-                        encoder,
-                    );
-
-                for (
-                    const client of
-                    yjsDocument.clients
-                ) {
+                for (const client of yjsDocument.clients) {
+                    // Skip echo only if origin matches this client
                     if (client === origin) {
                         continue;
                     }
 
-                    if (
-                        client.readyState !==
-                        WebSocket.OPEN
-                    ) {
-                        continue;
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(message);
                     }
-
-                    client.send(message);
                 }
             }
 
@@ -431,11 +413,21 @@ export function setupYjsWebSocket(
                 },
                 origin: unknown,
             ) {
-                if (
-                    !yjsDocument ||
-                    !(origin instanceof WebSocket)
-                ) {
+                if (!yjsDocument) {
                     return;
+                }
+
+                // Only record IDs if the event originated from this specific socket
+                if (origin === socket) {
+                    for (const clientId of added) {
+                        awarenessClientIds.add(clientId);
+                    }
+                    for (const clientId of updated) {
+                        awarenessClientIds.add(clientId);
+                    }
+                    for (const clientId of removed) {
+                        awarenessClientIds.delete(clientId);
+                    }
                 }
 
                 const changedClients = [
@@ -444,22 +436,16 @@ export function setupYjsWebSocket(
                     ...removed,
                 ];
 
-                if (
-                    changedClients.length === 0
-                ) {
+                if (changedClients.length === 0) {
                     return;
                 }
 
-                const update =
-                    awarenessProtocol.encodeAwarenessUpdate(
-                        yjsDocument.awareness,
-                        changedClients,
-                    );
-
-                broadcastAwarenessUpdate(
-                    update,
-                    origin,
+                const update = awarenessProtocol.encodeAwarenessUpdate(
+                    yjsDocument.awareness,
+                    changedClients,
                 );
+
+                broadcastAwarenessUpdate(update, origin);
             }
 
             /*
@@ -718,39 +704,30 @@ export function setupYjsWebSocket(
                 }
             })();
 
-            socket.on(
-                "close",
-                () => {
-                    yjsDocument?.clients.delete(
-                        socket,
+            socket.on("close", () => {
+                // 1. Remove socket from the active client list first
+                yjsDocument?.clients.delete(socket);
+
+                // 2. Broadcast removal to remaining clients
+                if (yjsDocument && awarenessClientIds.size > 0) {
+                    awarenessProtocol.removeAwarenessStates(
+                        yjsDocument.awareness,
+                        Array.from(awarenessClientIds),
+                        "server",
                     );
+                    awarenessClientIds.clear();
+                }
 
-                    // console.log(
-                    //     "Yjs client disconnected:",
-                    //     {
-                    //         documentKey,
-                    //         clients:
-                    //             yjsDocument
-                    //                 ?.clients
-                    //                 .size ?? 0,
-                    //     },
-                    // );
-
-                    if (
-                        yjsDocument &&
-                        yjsDocument.clients.size === 0
-                    ) {
-                        yjsDocument.awareness.off(
-                            "update",
-                            handleAwarenessUpdate,
-                        );
-
-                        yjsDocument.doc.destroy();
-
-                        documents.delete(documentKey);
-                    }
-                },
-            );
+                // 3. Destroy document if everyone left
+                if (yjsDocument && yjsDocument.clients.size === 0) {
+                    yjsDocument.awareness.off(
+                        "update",
+                        handleAwarenessUpdate,
+                    );
+                    yjsDocument.doc.destroy();
+                    documents.delete(documentKey);
+                }
+            });
 
             socket.on(
                 "error",

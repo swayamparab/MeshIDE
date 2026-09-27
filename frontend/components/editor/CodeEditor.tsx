@@ -7,6 +7,7 @@ import Editor, {
 import * as Y from "yjs";
 import { MonacoBinding } from "y-monaco";
 import type { Awareness } from "y-protocols/awareness";
+import type * as Monaco from "monaco-editor";
 
 interface CodeEditorProps {
     language: string;
@@ -75,6 +76,11 @@ export default function CodeEditor({
 
         const remoteDecorationIds = new Map<number, string[]>();
 
+        const remoteCursorLabels = new Map<
+            number,
+            HTMLDivElement
+        >();
+
         const updateRemoteCursors = () => {
             const activeClientIds =
                 new Set<number>();
@@ -94,35 +100,53 @@ export default function CodeEditor({
                     const selection = state.selection;
                     const user = state.user;
 
-                    const decorations: {
-                        range: {
-                            startLineNumber: number;
-                            startColumn: number;
-                            endLineNumber: number;
-                            endColumn: number;
-                        };
-                        options: {
-                            className: string;
-                        };
-                    }[] = [];
+                    const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
 
                     if (cursor && user) {
                         decorations.push({
                             range: {
-                                startLineNumber:
-                                    cursor.lineNumber,
-                                startColumn:
-                                    cursor.column,
-                                endLineNumber:
-                                    cursor.lineNumber,
-                                endColumn:
-                                    cursor.column,
+                                startLineNumber: cursor.lineNumber,
+                                startColumn: cursor.column,
+                                endLineNumber: cursor.lineNumber,
+                                endColumn: cursor.column,
                             },
                             options: {
-                                className:
-                                    "mesh-remote-cursor",
+                                className: "mesh-remote-cursor",
                             },
                         });
+
+                        let label =
+                            remoteCursorLabels.get(clientId);
+
+                        if (!label) {
+                            label = document.createElement("div");
+
+                            label.className =
+                                "mesh-remote-cursor-label";
+
+                            remoteCursorLabels.set(
+                                clientId,
+                                label,
+                            );
+
+                            editor.getDomNode()?.appendChild(label);
+                        }
+
+                        label.textContent = user.name;
+
+                        const position =
+                            editor.getScrolledVisiblePosition({
+                                lineNumber: cursor.lineNumber,
+                                column: cursor.column,
+                            });
+
+                        if (position) {
+                            label.style.left =
+                                `${position.left}px`;
+
+                            label.style.top =
+                                `${position.top - 22}px`;
+                        }
                     }
 
                     if (
@@ -179,20 +203,75 @@ export default function CodeEditor({
                 ] of remoteDecorationIds
             ) {
                 if (
-                    !activeClientIds.has(
-                        clientId,
-                    )
+                    !activeClientIds.has(clientId)
                 ) {
                     editor.deltaDecorations(
                         decorationIds,
                         [],
                     );
 
+                    const label =
+                        remoteCursorLabels.get(clientId);
+
+                    if (label) {
+                        label.remove();
+                        remoteCursorLabels.delete(
+                            clientId,
+                        );
+                    }
+
                     remoteDecorationIds.delete(
                         clientId,
                     );
                 }
             }
+        };
+
+        const updateCursorLabelPositions = () => {
+            awareness.getStates().forEach(
+                (state, clientId) => {
+                    if (
+                        clientId ===
+                        awareness.clientID
+                    ) {
+                        return;
+                    }
+
+                    const cursor = state.cursor;
+
+                    if (!cursor) {
+                        return;
+                    }
+
+                    const label =
+                        remoteCursorLabels.get(clientId);
+
+                    if (!label) {
+                        return;
+                    }
+
+                    const position =
+                        editor.getScrolledVisiblePosition({
+                            lineNumber:
+                                cursor.lineNumber,
+                            column:
+                                cursor.column,
+                        });
+
+                    if (!position) {
+                        label.style.display = "none";
+                        return;
+                    }
+
+                    label.style.display = "block";
+
+                    label.style.left =
+                        `${position.left}px`;
+
+                    label.style.top =
+                        `${position.top - 22}px`;
+                },
+            );
         };
 
         const handleRemoteAwareness = () => {
@@ -210,6 +289,11 @@ export default function CodeEditor({
             "change",
             handleRemoteAwareness,
         );
+
+        const scrollDisposable =
+            editor.onDidScrollChange(
+                updateCursorLabelPositions,
+            );
 
         // Render any users already present
         updateRemoteCursors();
@@ -299,6 +383,8 @@ export default function CodeEditor({
                 handleRemoteAwareness,
             );
 
+            scrollDisposable.dispose();
+
             for (
                 const decorationIds of
                 remoteDecorationIds.values()
@@ -309,6 +395,12 @@ export default function CodeEditor({
                 );
             }
             remoteDecorationIds.clear();
+
+            for (const label of remoteCursorLabels.values()) {
+                label.remove();
+            }
+
+            remoteCursorLabels.clear();
 
             binding.destroy();
         };
