@@ -1,12 +1,6 @@
 "use client";
 
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from "react";
-
+import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
@@ -22,448 +16,209 @@ interface UseYjsOptions {
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
 
-export function useYjs({
-    projectId,
-    fileId,
-}: UseYjsOptions) {
-    const [connected, setConnected] =
-        useState(false);
+interface YjsSession {
+    fileId: string;
+    doc: Y.Doc;
+    text: Y.Text;
+    awareness: awarenessProtocol.Awareness;
+}
 
-    const [synced, setSynced] =
-        useState(false);
-
-    const doc = useMemo(
-        () => new Y.Doc(),
-        [projectId, fileId],
-    );
-
-    const text = useMemo(
-        () => doc.getText("monaco"),
-        [doc],
-    );
-
-    const awareness = useMemo(
-        () =>
-            new awarenessProtocol.Awareness(
-                doc,
-            ),
-        [doc],
-    );
-
+export function useYjs({ projectId, fileId }: UseYjsOptions) {
+    const [session, setSession] = useState<YjsSession | null>(null);
+    const [connected, setConnected] = useState(false);
     const socketRef = useRef<WebSocket | null>(null);
 
     const { data: user } = useCurrentUser();
+    const userId = user?.user.id;
+    const userName = user?.user.username;
 
     useEffect(() => {
-        if (!projectId || !fileId) {
+        if (!projectId || !fileId || !userId) {
             return;
         }
 
-        if (!user) {
-            return;
-        }
+        let disposed = false;
+
+        const doc = new Y.Doc();
+        const text = doc.getText("monaco");
+        const awareness = new awarenessProtocol.Awareness(doc);
 
         awareness.setLocalStateField("user", {
-            id: user.user.id,
-            name: user.user.username,
+            id: userId,
+            name: userName,
         });
 
-        console.log(
-            "Local awareness:",
-            awareness.getLocalState(),
-        );
-
-        setSynced(false);
+        setSession(null); // never expose the previous file's doc
 
         const apiUrl =
-            process.env.NEXT_PUBLIC_API_URL ??
-            "http://localhost:5000";
-
-        const wsUrl = apiUrl
-            .replace(/^http/, "ws")
-            .replace(/\/$/, "");
-
+            process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+        const wsUrl = apiUrl.replace(/^http/, "ws").replace(/\/$/, "");
         const url =
             `${wsUrl}/yjs` +
-            `?projectId=${encodeURIComponent(
-                projectId,
-            )}` +
-            `&fileId=${encodeURIComponent(
-                fileId,
-            )}`;
+            `?projectId=${encodeURIComponent(projectId)}` +
+            `&fileId=${encodeURIComponent(fileId)}`;
 
-        const socket =
-            new WebSocket(url);
-
-        socket.binaryType =
-            "arraybuffer";
-
+        const socket = new WebSocket(url);
+        socket.binaryType = "arraybuffer";
         socketRef.current = socket;
 
-        // Handle user closing the browser tab or reloading the page
-        const handleBeforeUnload = () => {
-            awareness.setLocalState(null);
+        const send = (encoder: encoding.Encoder) => {
             if (socket.readyState === WebSocket.OPEN) {
-                const update = awarenessProtocol.encodeAwarenessUpdate(
-                    awareness,
-                    [awareness.clientID]
-                );
-                sendAwarenessUpdate(update);
+                socket.send(encoding.toUint8Array(encoder));
             }
         };
-
-        window.addEventListener("beforeunload", handleBeforeUnload);
 
         const sendSyncStep1 = () => {
-            if (
-                socket.readyState !==
-                WebSocket.OPEN
-            ) {
-                return;
-            }
-
-            const encoder =
-                encoding.createEncoder();
-
-            encoding.writeVarUint(
-                encoder,
-                MESSAGE_SYNC,
-            );
-
-            syncProtocol.writeSyncStep1(
-                encoder,
-                doc,
-            );
-
-            socket.send(
-                encoding.toUint8Array(
-                    encoder,
-                ),
-            );
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, MESSAGE_SYNC);
+            syncProtocol.writeSyncStep1(encoder, doc);
+            send(encoder);
         };
 
-        const sendUpdate = (
-            update: Uint8Array,
-        ) => {
-            if (
-                socket.readyState !==
-                WebSocket.OPEN
-            ) {
-                return;
-            }
-
-            const encoder =
-                encoding.createEncoder();
-
-            encoding.writeVarUint(
-                encoder,
-                MESSAGE_SYNC,
-            );
-
-            syncProtocol.writeUpdate(
-                encoder,
-                update,
-            );
-
-            socket.send(
-                encoding.toUint8Array(
-                    encoder,
-                ),
-            );
+        const sendUpdate = (update: Uint8Array) => {
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, MESSAGE_SYNC);
+            syncProtocol.writeUpdate(encoder, update);
+            send(encoder);
         };
 
-        const sendAwarenessUpdate = (
-            update: Uint8Array,
-        ) => {
-            if (
-                socket.readyState !==
-                WebSocket.OPEN
-            ) {
-                return;
-            }
-
-            const encoder =
-                encoding.createEncoder();
-
-            encoding.writeVarUint(
-                encoder,
-                MESSAGE_AWARENESS,
-            );
-
+        const sendAwareness = (clients: number[]) => {
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
             encoding.writeVarUint8Array(
                 encoder,
-                update,
+                awarenessProtocol.encodeAwarenessUpdate(awareness, clients),
             );
-
-            socket.send(
-                encoding.toUint8Array(
-                    encoder,
-                ),
-            );
+            send(encoder);
         };
 
         const handleAwarenessUpdate = (
-            {
-                added,
-                updated,
-                removed,
-            }: {
+            { added, updated, removed }: {
                 added: number[];
                 updated: number[];
                 removed: number[];
             },
             origin: unknown,
         ) => {
-            if (origin === socket) {
-                return;
-            }
-
-            const changedClients = [
-                ...added,
-                ...updated,
-                ...removed,
-            ];
-
-            if (changedClients.length === 0) {
-                return;
-            }
-
-            const update =
-                awarenessProtocol.encodeAwarenessUpdate(
-                    awareness,
-                    changedClients,
-                );
-
-            sendAwarenessUpdate(update);
+            if (origin === socket) return;
+            const changed = [...added, ...updated, ...removed];
+            if (changed.length) sendAwareness(changed);
         };
 
-        const handleLocalUpdate = (
-            update: Uint8Array,
-            origin: unknown,
-        ) => {
-            if (origin === socket) {
-                return;
-            }
-
-            // console.log(
-            //     "Yjs local update:",
-            //     {
-            //         length:
-            //             update.length,
-            //         content:
-            //             text.toString(),
-            //     },
-            // );
-
+        const handleLocalUpdate = (update: Uint8Array, origin: unknown) => {
+            if (origin === socket) return;
             sendUpdate(update);
         };
 
-        awareness.on(
-            "update",
-            handleAwarenessUpdate,
-        );
-
-        doc.on(
-            "update",
-            handleLocalUpdate,
-        );
-
-        socket.onopen = () => {
-            // console.log(
-            //     "Yjs WebSocket connected",
-            // );
-
-            setConnected(true);
-
-            sendSyncStep1();
+        const handleBeforeUnload = () => {
+            awareness.setLocalState(null);
+            sendAwareness([awareness.clientID]);
         };
 
-        socket.onmessage = (
-            event,
-        ) => {
-            if (
-                !(event.data instanceof
-                    ArrayBuffer)
-            ) {
-                return;
-            }
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        awareness.on("update", handleAwarenessUpdate);
+        doc.on("update", handleLocalUpdate);
+
+        socket.onopen = () => {
+            if (disposed) return;
+            setConnected(true);
+            sendSyncStep1();
+            sendAwareness([awareness.clientID]); // announce ourselves
+        };
+
+        socket.onmessage = (event) => {
+            if (disposed) return;
+            if (!(event.data instanceof ArrayBuffer)) return;
 
             try {
-                const data =
-                    new Uint8Array(
-                        event.data,
-                    );
+                const decoder = decoding.createDecoder(
+                    new Uint8Array(event.data),
+                );
+                const messageType = decoding.readVarUint(decoder);
 
-                const decoder =
-                    decoding.createDecoder(
-                        data,
-                    );
-
-                const messageType =
-                    decoding.readVarUint(
-                        decoder,
-                    );
-
-                if (
-                    messageType ===
-                    MESSAGE_AWARENESS
-                ) {
-                    const update =
-                        decoding.readVarUint8Array(
-                            decoder,
-                        );
-
+                if (messageType === MESSAGE_AWARENESS) {
                     awarenessProtocol.applyAwarenessUpdate(
                         awareness,
-                        update,
+                        decoding.readVarUint8Array(decoder),
                         socket,
                     );
-
                     return;
                 }
 
-                if (
-                    messageType !==
-                    MESSAGE_SYNC
-                ) {
-                    return;
-                }
+                if (messageType !== MESSAGE_SYNC) return;
 
-                const encoder =
-                    encoding.createEncoder();
+                const encoder = encoding.createEncoder();
+                encoding.writeVarUint(encoder, MESSAGE_SYNC);
 
-                encoding.writeVarUint(
-                    encoder,
-                    MESSAGE_SYNC,
-                );
-
-                syncProtocol.readSyncMessage(
+                const syncType = syncProtocol.readSyncMessage(
                     decoder,
                     encoder,
                     doc,
                     socket,
                 );
 
-                // console.log(
-                //     "Yjs message applied:",
-                //     text.toString(),
-                // );
-
-                /*
-                 * The first sync message from the
-                 * server populates this client's
-                 * Y.Doc with the saved/live state.
-                 *
-                 * Only after this point should
-                 * Monaco bind to Y.Text.
-                 */
-                if (!synced) {
-                    setSynced(true);
+                // Content is only guaranteed to be loaded after SyncStep2
+                if (syncType === syncProtocol.messageYjsSyncStep2) {
+                    setSession({ fileId, doc, text, awareness });
                 }
 
-                if (
-                    encoding.length(
-                        encoder,
-                    ) > 1 &&
-                    socket.readyState ===
-                    WebSocket.OPEN
-                ) {
-                    socket.send(
-                        encoding.toUint8Array(
-                            encoder,
-                        ),
-                    );
+                if (encoding.length(encoder) > 1) {
+                    send(encoder);
                 }
             } catch (error) {
-                console.error(
-                    "Yjs sync error:",
-                    error,
-                );
+                console.error("Yjs sync error:", error);
             }
         };
 
-        socket.onerror = (
-            error,
-        ) => {
-            console.error(
-                "Yjs WebSocket error:",
-                error,
-            );
+        socket.onerror = (error) => {
+            if (disposed) return;
+            console.error("Yjs WebSocket error:", error);
         };
 
         socket.onclose = () => {
-            // console.log(
-            //     "Yjs WebSocket disconnected",
-            // );
-
+            if (disposed) return; // <-- the key fix: ignore stale sockets
             setConnected(false);
-            setSynced(false);
-
-            if (
-                socketRef.current ===
-                socket
-            ) {
-                socketRef.current = null;
-            }
+            setSession(null);
         };
 
         return () => {
+            disposed = true;
+
             window.removeEventListener("beforeunload", handleBeforeUnload);
 
-            // 1. Clear local awareness state and flush removal to server
             awareness.setLocalState(null);
-            if (socket.readyState === WebSocket.OPEN) {
-                const update = awarenessProtocol.encodeAwarenessUpdate(
-                    awareness,
-                    [awareness.clientID]
-                );
-                sendAwarenessUpdate(update);
-            }
+            sendAwareness([awareness.clientID]);
 
-            // 2. Detach listeners
             awareness.off("update", handleAwarenessUpdate);
             doc.off("update", handleLocalUpdate);
 
-            // 3. Close the socket connection
             socket.close();
-
             if (socketRef.current === socket) {
                 socketRef.current = null;
             }
 
-            // 4. Destroy awareness and doc instances
             awareness.destroy();
             doc.destroy();
 
+            setSession(null);
             setConnected(false);
-            setSynced(false);
         };
+    }, [projectId, fileId, userId, userName]);
 
-    }, [
-        projectId,
-        fileId,
-        doc,
-        text,
-        awareness,
-        user
-    ]);
+    const ready = session !== null && session.fileId === fileId;
 
-    const insertTestText = (
-        value: string,
-    ) => {
-        text.insert(
-            text.length,
-            value,
-        );
+    const insertTestText = (value: string) => {
+        if (!session) return;
+        session.text.insert(session.text.length, value);
     };
 
     return {
-        doc,
-        text,
-        awareness,
+        doc: ready ? session.doc : null,
+        text: ready ? session.text : null,
+        awareness: ready ? session.awareness : null,
         socket: socketRef.current,
         connected,
-        synced,
+        synced: ready,
         insertTestText,
     };
 }

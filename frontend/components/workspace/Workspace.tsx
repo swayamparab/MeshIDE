@@ -403,14 +403,12 @@ export default function Workspace({ projectId }: WorkspaceProps) {
                                 </div>
                             )}
 
-                        {activeOpenFile && synced && (
+                        {activeOpenFile && synced && yText && awareness && (
                             <div className="absolute inset-0">
                                 <CodeEditor
                                     key={activeOpenFile.id}
                                     path={`file:///${activeOpenFile.id}/${activeOpenFile.name}`}
-                                    language={getLanguageFromFileName(
-                                        activeOpenFile.name,
-                                    )}
+                                    language={getLanguageFromFileName(activeOpenFile.name)}
                                     yText={yText}
                                     awareness={awareness}
                                     onChange={handleEditorChange}
